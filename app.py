@@ -371,25 +371,71 @@ with tab3:
     st.markdown("### 导出结果")
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        result_df.to_excel(writer, sheet_name="TOPSIS评价结果", index=False)
+        # 1. 大循环：原始数据 + 指标 + 评分
+        if df_macro is not None:
+            df_macro.to_excel(writer, sheet_name="大循环-原始数据", index=False)
+            calc_macro_indicators(df_macro).to_excel(
+                writer, sheet_name="大循环-指标(C1-C4)", index=False
+            )
+        if "layer_scores" in st.session_state:
+            mc = st.session_state["merged_clean"]
+            ls = st.session_state["layer_scores"]
+            lw = st.session_state["layer_weights"]
+            pd.DataFrame({
+                "年度": mc["年度"].values,
+                "大循环评分": ls["大循环"],
+                "层面权重": round(lw["大循环"], 4),
+            }).to_excel(writer, sheet_name="大循环-评分", index=False)
+
+        # 2. 小循环：原始数据 + 指标 + 评分
+        if df_meso is not None:
+            df_meso.to_excel(writer, sheet_name="小循环-原始数据", index=False)
+            calc_meso_indicators(df_meso).to_excel(
+                writer, sheet_name="小循环-指标(C5-C6)", index=False
+            )
+        if "layer_scores" in st.session_state:
+            pd.DataFrame({
+                "年度": mc["年度"].values,
+                "小循环评分": ls["小循环"],
+                "层面权重": round(lw["小循环"], 4),
+            }).to_excel(writer, sheet_name="小循环-评分", index=False)
+
+        # 3. 点循环：每个年度的企业指标
+        for year, df_raw in micro_dict.items():
+            ind_y = calc_micro_indicators(df_raw)
+            ind_y.to_excel(
+                writer, sheet_name=f"点循环-指标({year})", index=False
+            )
+        if "layer_scores" in st.session_state:
+            pd.DataFrame({
+                "年度": mc["年度"].values,
+                "点循环评分(企业均值)": ls["点循环"],
+                "层面权重": round(lw["点循环"], 4),
+            }).to_excel(writer, sheet_name="点循环-评分", index=False)
+
+        # 4. TOPSIS 企业评价
+        result_df.to_excel(writer, sheet_name="TOPSIS企业评价", index=False)
+
+        # 5. 权重汇总
         if "weight_df" in st.session_state:
             st.session_state["weight_df"].to_excel(
-                writer, sheet_name="C1-C10组合权重", index=False
+                writer, sheet_name="权重汇总(C1-C10)", index=False
             )
-        micro_weight_df.to_excel(writer, sheet_name="C7-C10归一化权重", index=False)
+        micro_weight_df.to_excel(
+            writer, sheet_name="权重-点循环归一化(C7-C10)", index=False
+        )
+        if "layer_weights" in st.session_state:
+            pd.DataFrame({
+                "层面": list(lw.keys()),
+                "权重": [round(v, 4) for v in lw.values()],
+            }).to_excel(writer, sheet_name="权重-层面权重", index=False)
+
+        # 6. 试点汇总评分
         if "pilot_df" in st.session_state:
             st.session_state["pilot_df"].to_excel(
-                writer, sheet_name="试点分层评分", index=False
+                writer, sheet_name="试点汇总评分", index=False
             )
-        if df_macro is not None:
-            calc_macro_indicators(df_macro).to_excel(
-                writer, sheet_name="大循环指标(C1-C4)", index=False
-            )
-        if df_meso is not None:
-            calc_meso_indicators(df_meso).to_excel(
-                writer, sheet_name="小循环指标(C5-C6)", index=False
-            )
-        ind_micro.to_excel(writer, sheet_name="点循环指标(C7-C10)", index=False)
+
     st.download_button(
         "下载评价结果 (Excel)",
         data=buf.getvalue(),
